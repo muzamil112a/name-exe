@@ -153,6 +153,7 @@
     <input id="nameIn" type="text" maxlength="24" placeholder="Type your name" aria-label="Your name" enterkeyhint="go">
     <button class="btn" type="submit">Find it</button>
   </form>
+  <button class="btn ghost" id="snd2" type="button" style="opacity:0;animation:fadeUp .6s 2.3s forwards">&#128266; Turn sound on</button>
   <p id="note" role="status"></p>
 </div>
 
@@ -242,17 +243,23 @@
     bonk: b => sweep(b * .5, b * .2, .2, { type: 'sine', v: .2 })
   };
   const KIND_FX = { flee: 'laugh', scared: 'scream', grab: 'boing', wake: 'yawn', faker: 'laugh', trick: 'laugh', free: 'whoop',
-    ow: 'wahwah', hey: 'slidedown', hider: 'tiptoe', busted: 'scratch', placed: 'tada', cheer: 'tada', run: 'whoop',
+    ow: 'wahwah', hey: 'slidedown', hider: 'tiptoe', busted: 'scratch', placed: 'tada', cheer: 'boing', run: 'whoop',
     sus: 'sus', still: 'bonk', twist: 'evil', faint: 'slidedown', faintwake: 'yawn', bump: 'wahwah' };
   function voice(L, kind) {                  // each letter has its own pitch, so M and A sound different
     if (!sound) return;
     const base = 220 + ((L.ch.codePointAt(0) || 65) % 13) * 30;
     try { FX[KIND_FX[kind] || 'boing'](base); } catch (e) { /* audio unavailable */ }
   }
-  sndBtn.addEventListener('click', () => {
-    sound = !sound; sndBtn.textContent = 'Sound: ' + (sound ? 'on' : 'off');
-    if (sound) tone(660, .1);
-  });
+  const snd2 = $('#snd2');
+  function setSound(on) {
+    sound = on; sndBtn.textContent = 'Sound: ' + (on ? 'on' : 'off');
+    snd2.textContent = on ? '🔊 Sound is on' : '🔊 Turn sound on';
+    if (on) tone(660, .1);
+  }
+  sndBtn.addEventListener('click', () => setSound(!sound));
+  snd2.addEventListener('click', () => setSound(!sound));
+  // ?sound=1 on the link starts with sound on (handy for recording); the default stays off
+  try { if (new URLSearchParams(location.search).get('sound') === '1') setSound(true); } catch (e) { /* ignore */ }
 
   // ---------- speech ----------
   const QUIPS = {
@@ -394,7 +401,9 @@
     state = 'intro2';
     intro.classList.add('hide'); hud.classList.add('show');
     timerEl.textContent = '0.0s';
-    hint.textContent = all.length > MAX_LETTERS ? `Using the first ${MAX_LETTERS} letters of your name` : 'Drag each letter back into its slot';
+    const touchDevice = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
+    hint.textContent = all.length > MAX_LETTERS ? `Using the first ${MAX_LETTERS} letters of your name`
+      : touchDevice ? 'Tap a letter to poke it. Hold and drag to catch it' : 'Drag each letter back into its slot';
     const word = chars.join(''), screamer = letters.find(l => l.p === 'screamer');
     const others = letters.filter(l => l !== screamer);
     setTimeout(() => {                      // 2. one of them notices the cursor
@@ -492,17 +501,13 @@
   }
 
   // ---------- input ----------
-  stage.addEventListener('pointerdown', e => {
-    pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true;
-    if (state !== 'play') return;
-    const tg = e.target.closest ? e.target : null;
-    if (tg && tg.closest('.cookie')) { e.preventDefault(); reveal(); return; }
-    const tile = tg && tg.closest('.tile');
-    if (!tile) return;
-    const L = letters.find(l => l.el === tile);
-    if (!L || L.state === 'placed') return;
-    e.preventDefault();
+  // On a phone there is no hover, so the letters themselves are the controls:
+  // a quick TAP pokes a letter (it yelps and hops away from your finger), HOLD or DRAG catches it.
+  let pending = null;                       // a touch that has landed on a letter but isn't a tap or a grab yet
+  function startGrab(L) {
+    if (L.state === 'placed' || L.state === 'held') return;
     if (L.hs) reveal();                     // grabbing the peeking Hider blows its cover
+    pointer.active = true;
     const remaining = letters.filter(l => l.state !== 'placed');
     if (remaining.length === 1 && !twistDone) {      // the twist: last letter jumps out of your grip
       twistDone = true; say('NOT SO FAST! 😈', 1500); tone(180, .35, 'sawtooth');
@@ -515,10 +520,49 @@
     L.state = 'held'; L.t = 0; grab = L; L.dash = 0; L.dizzy = 0; L.faint = 0;
     L.el.classList.add('held'); L.el.classList.remove('shake', 'asleep', 'running', 'dizzy', 'faint'); tone(520, .06);
     talk(L, wasAsleep ? 'wake' : 'grab', true);
+  }
+  function poke(L, px, py) {                // a tap: the letter hops away from where you tapped it
+    if (L.state !== 'free') return;
+    if (L.hs) { reveal(); return; }
+    if (L.faint > 0) return;                // knocked out cold: leave it for catching
+    const cx = L.x + size / 2, cy = L.y + size * .575;
+    let dx = cx - px, dy = cy - py, d = Math.hypot(dx, dy);
+    if (d < 3) { const a = Math.random() * 6.28; dx = Math.cos(a); dy = Math.sin(a); d = 1; }
+    dx /= d; dy /= d;
+    L.vx = dx * 620; L.vy = dy * 620 - 120; L.dash = 0; L.dashTarget = null; L.dizzy = 0; L.ang = Math.atan2(L.vy, L.vx);
+    if (L.p === 'faker') { L.fk = 'bolt'; L.bt = 1.8; L.el.classList.remove('asleep', 'mz'); }
+    L.scared = true; talk(L, 'scared', true);
+    for (const o of letters) {              // its neighbours get startled too, so they bump into each other
+      if (o === L || o.state !== 'free' || o.hs || o.faint > 0) continue;
+      const ox = o.x - L.x, oy = o.y - L.y, od = Math.hypot(ox, oy) || 1;
+      if (od < size * 1.9) { o.vx += ox / od * 320; o.vy += oy / od * 320; o.ang = Math.atan2(o.vy, o.vx); talk(o, 'scared'); }
+    }
+    if (navigator.vibrate) navigator.vibrate(15);
+  }
+  stage.addEventListener('pointerdown', e => {
+    pointer.x = e.clientX; pointer.y = e.clientY;
+    const touch = e.pointerType !== 'mouse';
+    pointer.active = !touch;
+    if (state !== 'play') return;
+    const tg = e.target.closest ? e.target : null;
+    if (tg && tg.closest('.cookie')) { e.preventDefault(); reveal(); return; }
+    const tile = tg && tg.closest('.tile');
+    if (!tile) return;
+    const L = letters.find(l => l.el === tile);
+    if (!L || L.state === 'placed') return;
+    e.preventDefault();
+    if (!touch) { startGrab(L); return; }   // mouse: click-and-drag catches straight away
+    pending = { L, x: e.clientX, y: e.clientY };
+    setTimeout(() => { if (pending && pending.L === L) { pending = null; startGrab(L); } }, 170);   // held long enough = caught
   });
-  window.addEventListener('pointermove', e => { pointer.x = e.clientX; pointer.y = e.clientY; if (e.pointerType === 'mouse') pointer.active = true; });
+  window.addEventListener('pointermove', e => {
+    pointer.x = e.clientX; pointer.y = e.clientY;
+    if (e.pointerType === 'mouse') pointer.active = true;
+    if (pending && Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > 10) { const L = pending.L; pending = null; startGrab(L); }   // dragging = caught
+  });
   const up = e => {
     if (e.pointerType !== 'mouse') pointer.active = false;
+    if (pending) { const p = pending; pending = null; if (e.type === 'pointerup') poke(p.L, p.x, p.y); return; }
     if (grab) drop(grab);
   };
   window.addEventListener('pointerup', up);
@@ -676,8 +720,23 @@
     hint.classList.remove('show');
     say('RECOVERED! 🎉', 2000); burst();
     letters.forEach((L, i) => setTimeout(() => { if (gameId !== gid) return; L.el.classList.add('cheer'); talk(L, 'cheer', true); }, i * 90));
-    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, .25, 'triangle'), i * 120));
+    fanfare();
     setTimeout(() => { if (gameId === gid) showCard(secs); }, 2500);
+  }
+  function fanfare() {                      // the victory sound: confetti pop, party horn, "ta-da-da-DAAA", crowd cheer, sparkle
+    if (!sound) return;
+    try {
+      noise(.12, .22);
+      sweep(300, 900, .35, { type: 'sawtooth', v: .12 });
+      [523, 659, 784, 1047].forEach((f, i) => {
+        const d = i === 3 ? .7 : .16, at = .12 + i * .15;
+        sweep(f, f, d, { type: 'triangle', v: .26, delay: at });
+        sweep(f * 2, f * 2, d, { type: 'square', v: .05, delay: at });
+      });
+      noise(.9, .07, .75);
+      setTimeout(() => noise(.1, .2), 350); setTimeout(() => noise(.1, .2), 700);
+      sweep(1047, 2093, .5, { type: 'sine', v: .12, delay: .75, vib: 10 });
+    } catch (e) { /* audio unavailable */ }
   }
 
   function rr(x, px, py, w, h, r, fill) {
