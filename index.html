@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NAME.exe - Your Name Has Escaped!</title>
+<meta name="description" content="Your own name tries to escape from you. Can you catch every letter?">
+<style>
+  :root { --bg:#120b2e; --bg2:#2b1166; --accent:#ffd23f; --pink:#ff4fa3; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:#fff; overflow:hidden;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  #stage { position:fixed; inset:0; touch-action:none; user-select:none; -webkit-user-select:none; --s:70px;
+    background:radial-gradient(1200px 800px at 50% 15%, var(--bg2), var(--bg)); }
+  #field, #slots { position:absolute; inset:0; }
+  #slots { opacity:0; transition:opacity .4s; pointer-events:none; }
+  #slots.show { opacity:1; }
+  .slot { position:absolute; left:0; top:0; width:var(--s); height:calc(var(--s)*1.15);
+    border:3px dashed rgba(255,255,255,.3); border-radius:28%; }
+  .slot::after { content:attr(data-ch); position:absolute; left:0; right:0; bottom:2%; text-align:center;
+    font-weight:900; font-size:calc(var(--s)*.58); line-height:1; color:rgba(255,255,255,.14); }
+  .slot.ok { border-color:transparent; }
+  .slot.ok::after { content:""; }
+
+  /* ---- characters ---- */
+  .tile { position:absolute; left:0; top:0; width:var(--s); height:calc(var(--s)*1.15); z-index:2;
+    will-change:transform; cursor:grab; touch-action:none; transform-origin:50% 100%; }
+  .tile.hiding { z-index:0; }
+  .face { position:absolute; inset:0; border-radius:28%; background:var(--c); transition:transform .12s;
+    box-shadow:0 6px 0 rgba(0,0,0,.25), inset 0 -6px 0 rgba(0,0,0,.12); }
+  .eyes { position:absolute; top:12%; left:0; right:0; display:flex; justify-content:center; gap:calc(var(--s)*.08); }
+  .eyes i { --e:calc(var(--s)*.27); width:var(--e); height:var(--e); background:#fff; border-radius:50%;
+    position:relative; overflow:hidden; transition:height .15s, margin-top .15s; }
+  .eyes b { position:absolute; left:50%; top:50%; width:48%; height:48%; background:#1b1230; border-radius:50%;
+    transform:translate(calc(-50% + var(--px,0px)), calc(-50% + var(--py,0px))); }
+  .g { position:absolute; left:0; right:0; bottom:2%; text-align:center; font-weight:900; line-height:1;
+    font-size:calc(var(--s)*.58); color:#fff; text-shadow:0 3px 0 rgba(0,0,0,.25); }
+  .mouth { position:absolute; left:50%; top:37%; width:calc(var(--s)*.26); height:calc(var(--s)*.1);
+    transform:translateX(-50%); border-bottom:3px solid #1b1230; border-radius:0 0 60% 60%; transition:all .1s; }
+  .mo .mouth { width:calc(var(--s)*.15); height:calc(var(--s)*.15); border:0; background:#5a1030; border-radius:50%; top:36%; }
+  .mg .mouth { width:calc(var(--s)*.32); height:calc(var(--s)*.14); border:0; background:#5a1030; border-radius:0 0 100px 100px; }
+  .mz .mouth { width:calc(var(--s)*.12); height:2px; border:0; background:#1b1230; border-radius:2px; top:40%; }
+  .zzz { display:none; position:absolute; top:-14%; right:-4%; font-style:normal; font-weight:800;
+    font-size:calc(var(--s)*.3); animation:zz 1.6s ease-in-out infinite; }
+  .asleep .zzz { display:block; }
+  .asleep .eyes i { height:4px; margin-top:calc(var(--s)*.1); }
+  .asleep .eyes b { opacity:0; }
+  .dizzy .eyes b, .faint .eyes b { opacity:0; }
+  .dizzy .eyes i::after, .faint .eyes i::after { content:"\00d7"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:calc(var(--s)*.3); font-weight:900; color:#1b1230; }
+  .faint .face { transform:rotate(82deg) translateY(6%); }          /* knocked out: lying on its side */
+  .faint .mouth { width:calc(var(--s)*.15); height:calc(var(--s)*.15); border:0; background:#5a1030; border-radius:50%; top:36%; }
+  .faint .zzz { display:block; }
+  .dizzy::before { content:"\1F4AB"; position:absolute; left:50%; top:-30%; margin-left:calc(var(--s)*-.2);
+    font-size:calc(var(--s)*.4); animation:spin .6s linear infinite; z-index:3; }
+  .legs { position:absolute; left:0; right:0; top:96%; display:flex; justify-content:center; gap:calc(var(--s)*.24); pointer-events:none; }
+  .legs u { display:block; width:calc(var(--s)*.1); height:calc(var(--s)*.17); background:#1b1230; border-radius:4px; transform-origin:50% 0; }
+  .running .legs u:nth-child(1) { animation:leg .15s linear infinite; }
+  .running .legs u:nth-child(2) { animation:leg .15s linear infinite -.075s; }
+  .placed .legs, .hiding .legs { display:none; }
+  .say { position:absolute; left:50%; bottom:118%; transform:translateX(-50%) scale(.5); opacity:0; pointer-events:none;
+    background:#fff; color:#1b1230; font-weight:800; font-size:15px; padding:6px 12px; border-radius:14px;
+    white-space:nowrap; transition:opacity .12s, transform .12s; z-index:6; box-shadow:0 3px 10px rgba(0,0,0,.3); }
+  .say.big { font-size:22px; padding:8px 16px; }
+  .say::after { content:""; position:absolute; left:50%; top:100%; margin-left:-5px; border:5px solid transparent; border-top-color:#fff; }
+  .say.on { opacity:1; transform:translateX(-50%) scale(1); }
+  .held { z-index:5; }
+  .held .face { transform:scale(1.14) rotate(-4deg); }
+  .shake .face { animation:shake .12s linear infinite; }
+  .pop .face { animation:popin .35s cubic-bezier(.2,1.5,.4,1) both; animation-delay:var(--d,0s); }
+  .placed { cursor:default; }
+  .placed .face { animation:pop .4s; }
+  .placed.cheer .face { animation:cheer .5s ease-in-out 3; }
+  @keyframes shake { 0%,100% { transform:rotate(-5deg); } 50% { transform:rotate(5deg); } }
+  @keyframes pop { 0% { transform:scale(1.3); } 60% { transform:scale(.92); } 100% { transform:scale(1); } }
+  @keyframes popin { 0% { transform:scale(0); } 100% { transform:scale(1); } }
+  @keyframes cheer { 0%,100% { transform:translateY(0) scale(1); } 40% { transform:translateY(-34%) scale(1.08,.94); } }
+  @keyframes zz { 0%,100% { transform:translateY(0); opacity:.9; } 50% { transform:translateY(-8px); opacity:.4; } }
+  @keyframes leg { 0%,100% { transform:rotate(28deg); } 50% { transform:rotate(-28deg); } }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* ---- the fake cookie banner (the Hider's hiding spot) ---- */
+  .cookie { position:absolute; left:0; top:0; z-index:1; opacity:0; }
+  .cookie.in { opacity:1; }
+  .ck { position:absolute; inset:0; background:#fff; color:#1b1230; border-radius:14px; padding:6px 12px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; font-weight:700;
+    box-shadow:0 8px 24px rgba(0,0,0,.45); cursor:pointer; }
+  .cookie.in .ck { animation:ckIn .4s cubic-bezier(.2,1.5,.4,1); }
+  .cookie.fall .ck { animation:ckFall .7s ease-in forwards; }
+  .ck span { white-space:nowrap; font-size:12px; }
+  .ck b { background:var(--accent); border-radius:999px; padding:7px 11px; font-size:12px; white-space:nowrap; }
+  @keyframes ckIn { from { transform:translateY(-120px) scale(.9); opacity:0; } to { transform:none; opacity:1; } }
+  @keyframes ckFall { to { transform:translateY(130vh) rotate(28deg); opacity:.2; } }
+  .bonk { position:absolute; font-weight:900; font-size:22px; color:var(--accent); text-shadow:0 3px 0 #000; white-space:nowrap;
+    pointer-events:none; animation:bonk .9s ease-out forwards; z-index:7; }
+  @keyframes bonk { from { transform:translateY(0) scale(.6); opacity:1; } to { transform:translateY(-44px) scale(1.25); opacity:0; } }
+
+  #banner { position:fixed; left:0; right:0; top:20%; text-align:center; padding:0 16px; pointer-events:none;
+    font-weight:900; font-size:clamp(28px,8vw,64px); text-shadow:0 4px 0 rgba(0,0,0,.35); opacity:0; z-index:20; }
+  #banner.show { animation:bannerIn var(--dur,1.4s) ease both; }
+  @keyframes bannerIn { 0% { opacity:0; transform:scale(.6); } 12% { opacity:1; transform:scale(1.08); }
+    20% { transform:scale(1); } 80% { opacity:1; } 100% { opacity:0; } }
+
+  #hud { position:fixed; top:12px; left:16px; right:16px; display:flex; justify-content:space-between;
+    align-items:center; z-index:10; pointer-events:none; opacity:0; transition:opacity .3s; }
+  #hud.show { opacity:1; }
+  .mono { font-family:ui-monospace,Consolas,monospace; font-weight:700; color:var(--accent); }
+  #hint { position:fixed; bottom:10px; left:0; right:0; text-align:center; font-size:12px; opacity:0; transition:opacity .4s; pointer-events:none; }
+  #hint.show { opacity:.65; }
+
+  .btn { appearance:none; border:0; border-radius:999px; padding:12px 22px; font:inherit; font-weight:700;
+    background:var(--accent); color:#2a1a00; cursor:pointer; text-decoration:none; display:inline-block; }
+  .btn.ghost { background:rgba(255,255,255,.14); color:#fff; }
+  .btn:focus-visible, input:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+  #snd { pointer-events:auto; padding:6px 12px; font-size:14px; }
+
+  #intro { position:fixed; inset:0; z-index:30; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; padding:24px; text-align:center; transition:opacity .4s; }
+  #intro.hide { opacity:0; pointer-events:none; }
+  #intro h1 { margin:0; font-size:clamp(20px,5vw,30px); opacity:0; animation:fadeUp .6s .2s forwards; }
+  #intro h2 { margin:0; font-size:clamp(26px,7vw,44px); opacity:0; animation:fadeUp .6s 1.3s forwards; }
+  #form { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; opacity:0; animation:fadeUp .6s 2.1s forwards; }
+  #nameIn { width:min(78vw,300px); font:inherit; font-size:20px; font-weight:700; padding:12px 18px; border-radius:999px;
+    border:3px solid rgba(255,255,255,.3); background:rgba(255,255,255,.1); color:#fff; text-align:center; }
+  #nameIn::placeholder { color:rgba(255,255,255,.45); }
+  #note { min-height:20px; font-size:13px; color:var(--pink); margin:0; }
+  .tag { font-family:ui-monospace,Consolas,monospace; color:var(--accent); letter-spacing:1px; font-size:13px; opacity:.8; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+
+  #card { position:fixed; inset:0; z-index:40; display:none; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; padding:16px; background:rgba(10,6,30,.93); }
+  #card.show { display:flex; }
+  #cardImg { max-height:64vh; max-width:92vw; border-radius:16px; box-shadow:0 12px 40px rgba(0,0,0,.5); }
+  #cardBtns { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  #fx { position:fixed; inset:0; pointer-events:none; z-index:25; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="slots"></div>
+  <div id="field"></div>
+</div>
+<canvas id="fx"></canvas>
+<div id="banner"></div>
+<div id="hud"><span class="mono" id="timer">0.0s</span><button class="btn ghost" id="snd" aria-label="Toggle sound">Sound: off</button></div>
+<div id="hint">Drag each letter back into its slot</div>
+
+<div id="intro">
+  <div class="tag">NAME.exe</div>
+  <h1>&#9888;&#65039; Someone stole your identity.</h1>
+  <h2>What's your name?</h2>
+  <form id="form" autocomplete="off">
+    <input id="nameIn" type="text" maxlength="24" placeholder="Type your name" aria-label="Your name" enterkeyhint="go">
+    <button class="btn" type="submit">Find it</button>
+  </form>
+  <p id="note" role="status"></p>
+</div>
+
+<div id="card" role="dialog" aria-label="Your result card">
+  <img id="cardImg" alt="Your personalised result card">
+  <div id="cardBtns">
+    <a class="btn" id="dl" download="name-recovered.png">Download card</a>
+    <button class="btn ghost" id="again" type="button">Try another name</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const stage = $('#stage'), field = $('#field'), slotsEl = $('#slots'), banner = $('#banner');
+  const hud = $('#hud'), timerEl = $('#timer'), hint = $('#hint'), sndBtn = $('#snd');
+  const intro = $('#intro'), form = $('#form'), nameIn = $('#nameIn'), note = $('#note');
+  const card = $('#card'), cardImg = $('#cardImg'), dl = $('#dl'), again = $('#again');
+  const fx = $('#fx'), fctx = fx.getContext('2d');
+
+  const COLORS = ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#4dabf7', '#9775fa', '#f783ac', '#38d9a9', '#ff8787', '#74c0fc'];
+  const ROLE_ORDER = ['screamer', 'dramaqueen', 'hider', 'faker'];   // everyone else is a follower
+  const MAX_LETTERS = 10;
+  const SITE_LINE = 'Your name tried to escape. Did yours?';
+
+  let letters = [], slots = [], state = 'intro', grab = null, twistDone = false, gameId = 0, cookie = null;
+  let W = 0, H = 0, size = 70, rows = 1, perRow = 4, startT = 0, graceUntil = 0, shownName = '';
+  const pointer = { x: -999, y: -999, active: false };
+  const parts = [];
+
+  // ---------- sound (optional, off by default) ----------
+  let sound = false, ac = null;
+  function getAC() {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    if (ac.state === 'suspended') ac.resume();
+    return ac;
+  }
+  function tone(f, d = .12, type = 'sine', v = .14) {
+    if (!sound) return;
+    try {
+      const a = getAC(), t = a.currentTime, o = a.createOscillator(), g = a.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+      o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + d + .02);
+    } catch (e) { /* audio unavailable */ }
+  }
+  // A pitch slide with optional vibrato. Every cartoon sound below is built from these two helpers.
+  function sweep(f0, f1, d, o = {}) {
+    const a = getAC(), t = a.currentTime + (o.delay || 0), os = a.createOscillator(), g = a.createGain();
+    os.type = o.type || 'square';
+    os.frequency.setValueAtTime(f0, t); os.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + d);
+    if (o.vib) {
+      const l = a.createOscillator(), lg = a.createGain();
+      l.frequency.value = o.vib; lg.gain.value = f0 * .08; l.connect(lg); lg.connect(os.frequency); l.start(t); l.stop(t + d + .02);
+    }
+    const v = o.v || .09;
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .01); g.gain.exponentialRampToValueAtTime(.0005, t + d);
+    os.connect(g); g.connect(a.destination); os.start(t); os.stop(t + d + .02);
+  }
+  function noise(d, v = .08, delay = 0) {
+    const a = getAC(), len = Math.floor(a.sampleRate * d), buf = a.createBuffer(1, len, a.sampleRate), data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const s = a.createBufferSource(), g = a.createGain(); s.buffer = buf; g.gain.value = v;
+    s.connect(g); g.connect(a.destination); s.start(a.currentTime + delay);
+  }
+  const FX = {
+    laugh: b => { for (let i = 0; i < 3; i++) sweep(b * 1.4, b * 1.1, .08, { delay: i * .11, v: .08 }); },   // heh heh heh
+    scream: b => sweep(b * 1.5, b * 2.4, .35, { vib: 18, v: .08 }),                                      // warbling panic
+    boing: b => sweep(b * .8, b * 1.8, .28, { type: 'sine', vib: 9, v: .16 }),
+    slidedown: b => sweep(b * 1.6, b * .4, .45, { type: 'triangle', v: .16 }),                           // slide whistle
+    wahwah: b => {                                                                                       // sad trombone
+      sweep(b * 1.2, b * .9, .14, { type: 'sawtooth', v: .06 });
+      sweep(b * 1.0, b * .75, .14, { type: 'sawtooth', v: .06, delay: .16 });
+      sweep(b * .8, b * .4, .35, { type: 'sawtooth', v: .06, delay: .32 });
+    },
+    yawn: b => sweep(b * 1.3, b * .5, .6, { type: 'sine', v: .14, vib: 6 }),
+    whoop: b => sweep(b * .7, b * 2.6, .3, { type: 'square', v: .07 }),
+    tada: b => {
+      sweep(b * 1.2, b * 1.2, .1, { type: 'triangle', v: .14 });
+      sweep(b * 1.5, b * 1.5, .1, { type: 'triangle', v: .14, delay: .1 });
+      sweep(b * 2, b * 2, .25, { type: 'triangle', v: .14, delay: .2 });
+    },
+    tiptoe: b => { sweep(b * .5, b * .45, .07, { type: 'triangle', v: .16 }); sweep(b * .45, b * .4, .07, { type: 'triangle', v: .16, delay: .22 }); },
+    scratch: b => { noise(.25, .12); sweep(b * 1.5, b * .3, .3, { type: 'sawtooth', v: .07 }); },         // record scratch
+    evil: b => [1.2, 1, .85, .7].forEach((m, i) => sweep(b * m, b * m * .9, .14, { type: 'sawtooth', v: .07, delay: i * .15 })),
+    sus: b => sweep(b * .6, b * .5, .5, { type: 'sine', vib: 7, v: .14 }),
+    bonk: b => sweep(b * .5, b * .2, .2, { type: 'sine', v: .2 })
+  };
+  const KIND_FX = { flee: 'laugh', scared: 'scream', grab: 'boing', wake: 'yawn', faker: 'laugh', trick: 'laugh', free: 'whoop',
+    ow: 'wahwah', hey: 'slidedown', hider: 'tiptoe', busted: 'scratch', placed: 'tada', cheer: 'tada', run: 'whoop',
+    sus: 'sus', still: 'bonk', twist: 'evil', faint: 'slidedown', faintwake: 'yawn', bump: 'wahwah' };
+  function voice(L, kind) {                  // each letter has its own pitch, so M and A sound different
+    if (!sound) return;
+    const base = 220 + ((L.ch.codePointAt(0) || 65) % 13) * 30;
+    try { FX[KIND_FX[kind] || 'boing'](base); } catch (e) { /* audio unavailable */ }
+  }
+  sndBtn.addEventListener('click', () => {
+    sound = !sound; sndBtn.textContent = 'Sound: ' + (sound ? 'on' : 'off');
+    if (sound) tone(660, .1);
+  });
+
+  // ---------- speech ----------
+  const QUIPS = {
+    flee: ['Nope!', 'Catch me!', 'Too slow!', 'Not today!', 'Bye!', "Can't touch this", 'Wheee!'],
+    scared: ['AAAH!', "Don't look at me!", 'HELP!', 'Is that the cursor?!', 'I have a family!'],
+    grab: ['Put me down!', 'Unhand me!', 'Rude!', 'I have rights!', 'Not the face!'],
+    wake: ['5 more minutes...', 'Huh? Who?', 'I was sleeping!'],
+    faker: ['Just kidding!', 'Tricked ya!', 'Was I snoring?', 'Nap time is over!'],
+    free: ["I'M FREE!"], ow: ['Ow.', 'My letter!'], hey: ['HEY!', 'Watch it!', 'Rude!'],
+    hider: ['You saw nothing.'], busted: ['Okay, you saw something.', 'Not the cookie!', 'I was never here.'],
+    placed: ['Fine...', 'Ugh, home.', 'Back in line.', 'Okay okay!', 'Happy now?'],
+    cheer: ['YES!', 'We did it!', 'Home sweet home!', 'Group hug!', 'Best name ever!'],
+    sus: ['...is that a cursor?'], still: ['Nobody move.'], run: ['RUN!!!'], twist: ['NOT SO FAST!'],
+    faint: ['x_x', 'Lights out...', 'Tell my mom...', 'Ouch. The wall.'],
+    faintwake: ['Huh? What happened?', 'Who turned off the lights?', 'I saw stars...'],
+    bump: ['Watch it!', 'Ow, my corner!', 'Hey, I was running!', 'Sorry! ...not sorry']
+  };
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  function talk(L, kind, force, big) {
+    const now = performance.now();
+    if (!force && now < L.nextTalk) return;
+    L.nextTalk = now + 2400 + Math.random() * 1600;
+    const b = L.el.querySelector('.say');
+    b.textContent = pick(QUIPS[kind]); b.classList.toggle('big', !!big); b.classList.add('on'); voice(L, kind);
+    b.style.marginLeft = '0px';             // keep the bubble inside the screen, even for a letter at the edge
+    const bw = b.offsetWidth, left = L.x + size / 2 - bw / 2;
+    let shift = 0; if (left < 6) shift = 6 - left; else if (left + bw > W - 6) shift = W - 6 - (left + bw);
+    b.style.marginLeft = Math.round(shift) + 'px';
+    clearTimeout(L.tt); L.tt = setTimeout(() => b.classList.remove('on'), force ? 1400 : 1000);
+  }
+  function say(text, ms = 1400) {
+    banner.textContent = text;
+    banner.style.setProperty('--dur', ms + 'ms');
+    banner.classList.remove('show'); void banner.offsetWidth; banner.classList.add('show');
+  }
+  function bonk(x, y, text = 'BONK!') {
+    const e = document.createElement('div'); e.className = 'bonk'; e.textContent = text;
+    // sits to the upper-right of the hit so it never covers the letter or its speech bubble
+    e.style.left = Math.max(4, Math.min(W - 90, x + size * .35)) + 'px'; e.style.top = Math.max(70, y - size * .75) + 'px'; field.appendChild(e);
+    setTimeout(() => e.remove(), 950);
+  }
+  function parseName(raw) {
+    const segs = (window.Intl && Intl.Segmenter)
+      ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(raw)].map(s => s.segment)
+      : Array.from(raw);
+    return segs.filter(ch => /[\p{L}\p{N}]/u.test(ch)).map(c => c.toUpperCase());
+  }
+
+  // ---------- build + layout ----------
+  function build(chars) {
+    field.innerHTML = ''; slotsEl.innerHTML = ''; letters = []; slots = []; cookie = null;
+    const n = chars.length, roles = new Array(n).fill('follower');
+    const idx = chars.map((_, i) => i).sort(() => Math.random() - .5);
+    ROLE_ORDER.slice(0, Math.min(4, n)).forEach((r, k) => { roles[idx[k]] = r; });
+    chars.forEach((ch, i) => {
+      const el = document.createElement('div');
+      el.className = 'tile';
+      el.style.setProperty('--c', COLORS[i % COLORS.length]);
+      el.innerHTML = '<div class="legs"><u></u><u></u></div><div class="face"><div class="eyes"><i><b></b></i><i><b></b></i></div><div class="mouth"></div><span class="g"></span><em class="zzz">z</em></div><div class="say"></div>';
+      el.querySelector('.g').textContent = ch;
+      field.appendChild(el);
+      letters.push({ el, ch, color: COLORS[i % COLORS.length], x: 0, y: 0, vx: 0, vy: 0, ang: Math.random() * 6.28,
+        t: 0, p: roles[i], state: 'free', tricked: false, scared: false, nextTalk: 0, tt: 0,
+        dash: 0, dashTarget: null, dizzy: 0, faint: 0, cd: 0, fk: 'bolt', bt: 1.3, hs: null });
+      const s = document.createElement('div');
+      s.className = 'slot'; s.dataset.ch = ch; slotsEl.appendChild(s);
+      slots.push({ el: s, ch, filled: false, x: 0, y: 0 });
+    });
+    const h = letters.find(l => l.p === 'hider');
+    if (h) {
+      const el = document.createElement('div'); el.className = 'cookie';
+      el.innerHTML = '<div class="ck"><span>&#127850; We use cookies</span><b>Accept Cookies</b></div>';
+      field.insertBefore(el, field.firstChild);
+      cookie = { el, owner: h, x: 0, y: 0, w: 0, h: 0, hx: 0, hideY: 0, peekY: 0, gone: false, off: (Math.random() - .5) * .3 };
+    }
+  }
+  function layout() {
+    W = stage.clientWidth; H = stage.clientHeight;
+    const n = Math.max(letters.length, 4);
+    rows = 1; perRow = n;
+    if (n > 5 && (W - 28) / (n * 1.18) < 46) { rows = 2; perRow = Math.ceil(n / 2); }   // long name on a narrow screen
+    size = Math.max(30, Math.min(84, (W - 28) / (perRow * 1.18)));
+    const gap = size * .16, rowH = size * 1.15 + gap;
+    stage.style.setProperty('--s', size + 'px');
+    slots.forEach((s, i) => {
+      const r = Math.floor(i / perRow), c = i % perRow, cnt = Math.min(perRow, letters.length - r * perRow);
+      const x0 = (W - (cnt * size + (cnt - 1) * gap)) / 2;
+      s.x = x0 + c * (size + gap); s.y = H - rows * rowH - 14 + r * rowH;
+      s.el.style.transform = `translate(${s.x}px,${s.y}px)`;
+    });
+    if (cookie) {
+      cookie.w = Math.min(W - 24, Math.max(236, size * 3.1)); cookie.h = Math.max(54, size * 1.35);
+      cookie.x = Math.max(12, Math.min(W - cookie.w - 12, (W - cookie.w) / 2 + cookie.off * W));
+      cookie.y = Math.max(88 + size * .8, H * .3);
+      cookie.hx = cookie.x + (cookie.w - size) / 2;
+      cookie.hideY = cookie.y + (cookie.h - size * 1.15) / 2; cookie.peekY = cookie.y - size * .72;
+      cookie.el.style.width = cookie.w + 'px'; cookie.el.style.height = cookie.h + 'px';
+      cookie.el.style.transform = `translate(${cookie.x}px,${cookie.y}px)`;
+    }
+    letters.forEach(L => {
+      if (L.state === 'placed') { const s = slots.find(q => q.filled && q.letter === L); if (s) { L.x = s.x; L.y = s.y; } }
+      else if (!L.hs) clamp(L);
+    });
+    fx.width = W; fx.height = H;
+  }
+  function bounds() { return { minX: 4, maxX: W - size - 4, minY: 88, maxY: H - size * 1.15 - 8 }; }   // minY leaves room for bubbles under the timer
+  function avoidCookie(L) {                 // loose letters don't wander in front of the cookie banner
+    if (!cookie || cookie.gone) return;
+    const pad = 4, x0 = cookie.x - size + pad, x1 = cookie.x + cookie.w - pad, y0 = cookie.y - size * 1.15 + pad, y1 = cookie.y + cookie.h - pad;
+    if (L.x > x0 && L.x < x1 && L.y > y0 && L.y < y1) {
+      const dl = L.x - x0, dr = x1 - L.x, dt = L.y - y0, db = y1 - L.y, m = Math.min(dl, dr, dt, db);
+      if (m === dl) L.x = x0; else if (m === dr) L.x = x1; else if (m === dt) L.y = y0; else L.y = y1;
+      L.ang += Math.PI / 2;
+    }
+  }
+  // keeps a letter on screen; returns how hard it hit an edge (0 = no hit), so fast hits can knock it out
+  function clamp(L) {
+    const b = bounds(); let hit = false, imp = 0;
+    if (L.x < b.minX) { imp = Math.max(imp, -L.vx); L.x = b.minX; if (L.vx < 0) L.vx = 0; L.ang = Math.PI - L.ang; hit = true; }
+    if (L.x > b.maxX) { imp = Math.max(imp, L.vx); L.x = b.maxX; if (L.vx > 0) L.vx = 0; L.ang = Math.PI - L.ang; hit = true; }
+    if (L.y < b.minY) { imp = Math.max(imp, -L.vy); L.y = b.minY; if (L.vy < 0) L.vy = 0; L.ang = -L.ang; hit = true; }
+    if (L.y > b.maxY) { imp = Math.max(imp, L.vy); L.y = b.maxY; if (L.vy > 0) L.vy = 0; L.ang = -L.ang; hit = true; }
+    return hit ? Math.max(imp, .001) : 0;
+  }
+
+  // ---------- the opening (first ~2 seconds) ----------
+  function startGame(raw) {
+    const all = parseName(raw);
+    if (all.length < 2) { note.textContent = 'Give me at least 2 letters :)'; return false; }
+    const chars = all.slice(0, MAX_LETTERS);
+    note.textContent = '';
+    shownName = raw.trim().toUpperCase().slice(0, 16);
+    twistDone = false; grab = null; const gid = ++gameId;
+    build(chars); layout();
+    letters.forEach((L, i) => {            // 1. they stand in a row, smiling
+      L.x = slots[i].x; L.y = H * .4 + Math.floor(i / perRow) * size * 1.5;
+      L.el.style.setProperty('--d', (i * .07) + 's'); L.el.classList.add('pop', 'mg');
+    });
+    state = 'intro2';
+    intro.classList.add('hide'); hud.classList.add('show');
+    timerEl.textContent = '0.0s';
+    hint.textContent = all.length > MAX_LETTERS ? `Using the first ${MAX_LETTERS} letters of your name` : 'Drag each letter back into its slot';
+    const word = chars.join(''), screamer = letters.find(l => l.p === 'screamer');
+    const others = letters.filter(l => l !== screamer);
+    setTimeout(() => {                      // 2. one of them notices the cursor
+      if (gameId !== gid) return;
+      letters.forEach(L => { L.el.classList.remove('pop', 'mg'); L.el.classList.add('shake', 'mo'); });
+      talk(screamer, 'sus', true); tone(240, .2, 'triangle');
+    }, 850);
+    setTimeout(() => {                      // 3. deadpan reaction from someone else
+      if (gameId !== gid) return;
+      talk(pick(others), 'still', true);
+    }, 1400);
+    setTimeout(() => {                      // 4. RUN!!!
+      if (gameId !== gid) return;
+      talk(screamer, 'run', true, true); say(word + ' HAS ESCAPED!', 1700); tone(300, .25, 'square');
+      letters.forEach(L => {
+        const a = Math.random() * 6.28, sp = L === screamer ? 560 : 440 + Math.random() * 160;
+        L.vx = Math.cos(a) * sp; L.vy = Math.sin(a) * sp; L.ang = a; L.el.classList.remove('shake', 'mo');
+      });
+      if (cookie) {                         // the Hider sprints for a fake cookie banner
+        cookie.el.classList.add('in'); const h = cookie.owner; h.hs = 'run'; h.vx = h.vy = 0;
+        tone(180, .18, 'square');
+      }
+      state = 'play'; startT = performance.now(); graceUntil = startT + 2200;   // the opening scatter can't knock anyone out
+      slotsEl.classList.add('show'); hint.classList.add('show');
+    }, 1850);
+    return true;
+  }
+  form.addEventListener('submit', e => { e.preventDefault(); startGame(nameIn.value); });
+  setTimeout(() => { try { nameIn.focus({ preventScroll: true }); } catch (e) {} }, 2300);
+
+  // ---------- gameplay actions ----------
+  function release(L, dash) {
+    L.state = 'free'; L.el.classList.remove('held'); L.t = 0;
+    if (grab === L) grab = null;
+    if (dash) { const a = Math.random() * 6.28; L.vx = Math.cos(a) * 560; L.vy = Math.sin(a) * 560; }
+    L.ang = Math.atan2(L.vy || 1, L.vx || 1);
+  }
+  function place(L, s) {
+    L.state = 'placed'; s.filled = true; s.letter = L; L.x = s.x; L.y = s.y; L.vx = L.vy = 0;
+    L.faint = 0; L.dizzy = 0;
+    L.el.classList.remove('held', 'shake', 'asleep', 'running', 'mo', 'mz', 'dizzy', 'faint', 'hiding'); L.el.classList.add('placed', 'mg');
+    s.el.classList.add('ok'); grab = null; talk(L, 'placed', true);
+    const done = letters.filter(l => l.state === 'placed').length;
+    tone(520 + done * 70, .14, 'triangle');
+    if (done === letters.length) win();
+  }
+  function drop(L) {
+    const cx = L.x + size / 2, cy = L.y + size * .575;
+    let best = null, bd = 1e9;
+    for (const s of slots) {
+      if (s.filled || s.ch !== L.ch) continue;
+      const d = Math.hypot(s.x + size / 2 - cx, s.y + size * .575 - cy);
+      if (d < bd) { bd = d; best = s; }
+    }
+    if (best && bd < size * 1.15) place(L, best); else release(L, false);
+  }
+  function nearestFree(L) {
+    let best = null, bd = 1e9;
+    for (const o of letters) {
+      if (o === L || o.state !== 'free' || o.hs || o.dizzy > 0) continue;
+      const d = Math.hypot(o.x - L.x, o.y - L.y); if (d < bd) { bd = d; best = o; }
+    }
+    return best;
+  }
+  function crash(a, b) {                    // the Drama Queen's punchline
+    a.dash = 0; a.dashTarget = null; a.dizzy = 1.7;
+    const mx = (a.x + (b ? b.x : a.x)) / 2 + size / 2, my = (a.y + (b ? b.y : a.y)) / 2 + size / 2;
+    bonk(mx, my); tone(110, .25, 'square'); tone(80, .3, 'sawtooth', .06);
+    if (sound) { try { noise(.18, .14); } catch (e) { /* audio unavailable */ } }
+    if (b) {
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+      a.vx = -dx / d * 320; a.vy = -dy / d * 320; b.vx = dx / d * 320; b.vy = dy / d * 320;
+      b.dizzy = 1.7; talk(b, 'hey', true);
+    } else { a.vx = a.vy = 0; }
+    talk(a, 'ow', true);
+  }
+  function faint(L) {                       // hit the edge of the page too hard: knocked out cold
+    L.faint = 2.4; L.dash = 0; L.dashTarget = null; L.dizzy = 0; L.scared = false; L.vx = L.vy = 0;
+    L.el.classList.remove('shake', 'running', 'mo', 'mz', 'asleep', 'dizzy'); L.el.classList.add('faint');
+    bonk(L.x + size / 2, L.y + size / 2, 'THUD!'); tone(90, .25, 'sine', .22); talk(L, 'faint', true);
+  }
+  function collideDizzy(a, b) {             // two letters run into each other: stars, spin, bounce apart
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+    a.vx = -dx / d * 260; a.vy = -dy / d * 260; b.vx = dx / d * 260; b.vy = dy / d * 260;
+    a.dizzy = b.dizzy = 1.4; a.cd = b.cd = 3.5;
+    bonk((a.x + b.x) / 2 + size / 2, (a.y + b.y) / 2 + size / 2, 'BONK!');
+    tone(120, .2, 'square', .16); talk(a, 'bump', true);
+  }
+  function reveal() {                       // someone tapped the cookie banner
+    if (!cookie || cookie.gone) return;
+    cookie.gone = true; cookie.el.classList.add('fall');
+    const h = cookie.owner; h.hs = null; h.p = 'follower'; h.el.classList.remove('hiding');
+    h.vx = (Math.random() < .5 ? -1 : 1) * 320; h.vy = -220; h.ang = Math.atan2(h.vy, h.vx);
+    talk(h, 'busted', true); tone(150, .2, 'square'); bonk(cookie.x + cookie.w / 2, cookie.y, 'BUSTED!');
+  }
+
+  // ---------- input ----------
+  stage.addEventListener('pointerdown', e => {
+    pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true;
+    if (state !== 'play') return;
+    const tg = e.target.closest ? e.target : null;
+    if (tg && tg.closest('.cookie')) { e.preventDefault(); reveal(); return; }
+    const tile = tg && tg.closest('.tile');
+    if (!tile) return;
+    const L = letters.find(l => l.el === tile);
+    if (!L || L.state === 'placed') return;
+    e.preventDefault();
+    if (L.hs) reveal();                     // grabbing the peeking Hider blows its cover
+    const remaining = letters.filter(l => l.state !== 'placed');
+    if (remaining.length === 1 && !twistDone) {      // the twist: last letter jumps out of your grip
+      twistDone = true; say('NOT SO FAST! 😈', 1500); tone(180, .35, 'sawtooth');
+      const b = bounds();
+      L.x = pointer.x < W / 2 ? b.maxX - 10 : b.minX + 10; L.y = b.minY + Math.random() * (H * .25);
+      L.vx = L.vy = 0; L.state = 'free'; L.scared = true; L.dizzy = 0; L.dash = 0; talk(L, 'twist', true);
+      return;
+    }
+    const wasAsleep = L.el.classList.contains('asleep');
+    L.state = 'held'; L.t = 0; grab = L; L.dash = 0; L.dizzy = 0; L.faint = 0;
+    L.el.classList.add('held'); L.el.classList.remove('shake', 'asleep', 'running', 'dizzy', 'faint'); tone(520, .06);
+    talk(L, wasAsleep ? 'wake' : 'grab', true);
+  });
+  window.addEventListener('pointermove', e => { pointer.x = e.clientX; pointer.y = e.clientY; if (e.pointerType === 'mouse') pointer.active = true; });
+  const up = e => {
+    if (e.pointerType !== 'mouse') pointer.active = false;
+    if (grab) drop(grab);
+  };
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
+  stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') pointer.active = false; });
+  window.addEventListener('resize', () => { if (letters.length) layout(); });
+
+  // ---------- per-frame update ----------
+  function hiderStep(L, dt) {
+    const c = cookie;
+    if (L.hs === 'run') {
+      const dx = c.hx - L.x, dy = c.hideY - L.y, d = Math.hypot(dx, dy);
+      if (d < 10) { L.x = c.hx; L.y = c.hideY; L.hs = 'hide'; L.t = 0; L.vx = L.vy = 0; L.el.classList.add('hiding'); L.el.classList.remove('running'); }
+      else { L.vx = dx / d * 460; L.vy = dy / d * 460; L.x += L.vx * dt; L.y += L.vy * dt; }
+      return;
+    }
+    L.t += dt; L.x = c.hx;
+    const nx = Math.max(c.x, Math.min(pointer.x, c.x + c.w)), ny = Math.max(c.y, Math.min(pointer.y, c.y + c.h));
+    const near = pointer.active && Math.hypot(pointer.x - nx, pointer.y - ny) < size * 1.8;
+    if (L.hs === 'hide') {
+      L.y += (c.hideY - L.y) * Math.min(1, dt * 16);
+      if (L.t > 1.4 && !near) { L.hs = 'peek'; L.t = 0; talk(L, 'hider', true); }
+    } else {                                // peek
+      L.y += (c.peekY - L.y) * Math.min(1, dt * 16);
+      if (near || L.t > 1.6) { L.hs = 'hide'; L.t = 0; }
+    }
+    L.el.classList.toggle('mo', L.hs === 'hide' && near);
+  }
+  function update(dt) {
+    for (const L of letters) {
+      if (L.state === 'placed') continue;
+      if (L.state === 'held') {
+        L.el.classList.toggle('mo', L.p === 'scared'); L.el.classList.toggle('mg', L.p !== 'scared');
+        const k = Math.min(1, dt * 28);
+        L.x += (pointer.x - size / 2 - L.x) * k; L.y += (pointer.y - size * .575 - L.y) * k;
+        if (L.p === 'dramaqueen' && !L.tricked) {      // pleads, then breaks free and crashes into someone
+          L.t += dt;
+          if (L.t > .7) {
+            L.tricked = true; release(L, false);
+            L.dashTarget = nearestFree(L); L.dash = 1.4; talk(L, 'free', true, true); tone(760, .15, 'square');
+          }
+        }
+        continue;
+      }
+      if (state !== 'play') continue;
+      if (L.hs) { hiderStep(L, dt); continue; }
+      const cx = L.x + size / 2, cy = L.y + size * .575;
+      const dx = cx - pointer.x, dy = cy - pointer.y, d = Math.hypot(dx, dy) || 1, near = pointer.active;
+      let tx = 0, ty = 0, k = 6, scared = false;
+      L.ang += (Math.random() - .5) * dt * 3;
+      if (L.cd > 0) L.cd -= dt;
+      if (L.faint > 0) {
+        L.faint -= dt; tx = ty = 0; k = 10;
+        if (L.faint <= 0) { L.el.classList.remove('faint'); talk(L, 'faintwake', true); L.cd = 2; }
+      } else if (L.dizzy > 0) {
+        L.dizzy -= dt; tx = ty = 0; k = 3; L.el.classList.add('dizzy');
+        if (L.dizzy <= 0) L.el.classList.remove('dizzy');
+      } else if (L.dash > 0) {
+        L.dash -= dt; k = 14;
+        let tg = L.dashTarget;
+        if (tg && tg.state !== 'free') tg = L.dashTarget = nearestFree(L);
+        if (tg) {
+          const ax = tg.x - L.x, ay = tg.y - L.y, ad = Math.hypot(ax, ay) || 1;
+          tx = ax / ad * 780; ty = ay / ad * 780;
+          if (ad < size * .95) crash(L, tg);
+        } else { tx = Math.cos(L.ang) * 700; ty = Math.sin(L.ang) * 700; }
+      } else if (L.p === 'faker') {
+        if (L.fk === 'sleep') {
+          L.el.classList.add('asleep', 'mz'); k = 4;
+          if (near && d < 110) { L.fk = 'bolt'; L.bt = 1.8; L.el.classList.remove('asleep', 'mz'); talk(L, 'faker', true); tone(700, .12, 'square'); }
+        } else {
+          L.el.classList.remove('asleep', 'mz');
+          if (near && d < 200) { tx = dx / d * 420; ty = dy / d * 420; k = 10; scared = true; }
+          else { tx = Math.cos(L.ang) * 120; ty = Math.sin(L.ang) * 120; }
+          L.bt -= dt; if (L.bt <= 0 && (!near || d > 220)) { L.fk = 'sleep'; L.vx *= .2; L.vy *= .2; }
+        }
+      } else if (L.p === 'screamer') {
+        tx = Math.cos(L.ang) * 70; ty = Math.sin(L.ang) * 70;
+        if (near && d < 130) { const f = 260 + 120 * (1 - d / 130); tx += dx / d * f; ty += dy / d * f; talk(L, 'flee'); }
+      } else if (L.p === 'dramaqueen') {
+        tx = Math.cos(L.ang) * 90; ty = Math.sin(L.ang) * 90;
+        if (near && d < 100) { tx += dx / d * 170; ty += dy / d * 170; talk(L, 'flee'); }
+      } else if (L.p === 'scared') {
+        tx = Math.cos(L.ang) * 35; ty = Math.sin(L.ang) * 35;
+        if (near && d < 150) { scared = true; const f = d < 90 ? 460 : 190; tx = dx / d * f; ty = dy / d * f; k = 9; talk(L, 'scared'); }
+      } else {                                         // follower: slow and easy to catch, so long names stay fair
+        tx = Math.cos(L.ang) * 40; ty = Math.sin(L.ang) * 40;
+        if (near && d < 110) { tx += dx / d * 170; ty += dy / d * 170; talk(L, 'flee'); }
+      }
+      L.vx += (tx - L.vx) * Math.min(1, dt * k); L.vy += (ty - L.vy) * Math.min(1, dt * k);
+      L.x += L.vx * dt; L.y += L.vy * dt;
+      avoidCookie(L);
+      const imp = clamp(L);
+      if (imp && L.dash > 0 && !L.dashTarget) crash(L, null);
+      else if (imp > 300 && performance.now() > graceUntil && L.dizzy <= 0 && L.faint <= 0 && !(L.p === 'faker' && L.fk === 'sleep')) faint(L);
+      if (L.scared && !scared && L.p !== 'scared') L.scared = false;
+      L.el.classList.toggle('shake', scared || L.scared);
+      if (L.p !== 'faker') L.el.classList.toggle('mo', scared || L.scared);
+      else if (L.fk === 'bolt') L.el.classList.toggle('mo', scared);
+    }
+    if (state === 'play' && performance.now() > graceUntil) {       // letters that run into each other get dizzy
+      for (let i = 0; i < letters.length; i++) {
+        const a = letters[i];
+        if (a.state !== 'free' || a.hs || a.dizzy > 0 || a.faint > 0 || a.cd > 0) continue;
+        for (let j = i + 1; j < letters.length; j++) {
+          const b = letters[j];
+          if (b.state !== 'free' || b.hs || b.dizzy > 0 || b.faint > 0 || b.cd > 0) continue;
+          if (Math.hypot(a.x - b.x, a.y - b.y) < size * .85 && Math.hypot(a.vx - b.vx, a.vy - b.vy) > 160) { collideDizzy(a, b); break; }
+        }
+      }
+    }
+  }
+  function render(now) {
+    for (const L of letters) {
+      if (L.state === 'placed' || L.hs || L.faint > 0) { L.el.style.transform = `translate3d(${L.x}px,${L.y}px,0)`; if (L.state === 'placed') continue; }
+      else {
+        // squash & stretch, lean into the run, and a little hop
+        const sp = Math.hypot(L.vx, L.vy), moving = L.state === 'free' && state === 'play' && sp > 80;
+        const sy = moving ? 1 + Math.min(sp / 2600, .16) : 1, sx = 1 / sy;
+        const lean = moving ? Math.max(-14, Math.min(14, L.vx * .035)) : 0;
+        const hop = moving ? -Math.abs(Math.sin(now / 70 + L.ang)) * Math.min(6, sp / 60) : 0;
+        L.el.style.transform = `translate3d(${L.x}px,${L.y + hop}px,0) rotate(${lean}deg) scale(${sx},${sy})`;
+        L.el.classList.toggle('running', moving);
+      }
+      const ex = pointer.x - (L.x + size / 2), ey = pointer.y - (L.y + size * .575), ed = Math.hypot(ex, ey) || 1;
+      const o = Math.min(ed / 60, 1) * size * .06;
+      L.el.style.setProperty('--px', (ex / ed * o).toFixed(1) + 'px');
+      L.el.style.setProperty('--py', (ey / ed * o).toFixed(1) + 'px');
+    }
+  }
+
+  // ---------- win + confetti ----------
+  function burst() {
+    const cols = COLORS.concat(['#fff']);
+    for (let i = 0; i < 170; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 250 + Math.random() * 650;
+      parts.push({ x: W / 2, y: H * .4, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 300, r: 4 + Math.random() * 5,
+        c: cols[i % cols.length], life: 2.6 + Math.random() });
+    }
+  }
+  function confetti(dt) {
+    fctx.clearRect(0, 0, W, H);
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i]; p.life -= dt;
+      if (p.life <= 0) { parts.splice(i, 1); continue; }
+      p.vy += 900 * dt; p.vx *= .995; p.x += p.vx * dt; p.y += p.vy * dt;
+      fctx.fillStyle = p.c; fctx.globalAlpha = Math.min(1, p.life);
+      fctx.fillRect(p.x, p.y, p.r, p.r * 1.6);
+    }
+    fctx.globalAlpha = 1;
+  }
+  function win() {
+    state = 'win'; const gid = gameId;
+    const secs = (performance.now() - startT) / 1000;
+    hint.classList.remove('show');
+    say('RECOVERED! 🎉', 2000); burst();
+    letters.forEach((L, i) => setTimeout(() => { if (gameId !== gid) return; L.el.classList.add('cheer'); talk(L, 'cheer', true); }, i * 90));
+    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, .25, 'triangle'), i * 120));
+    setTimeout(() => { if (gameId === gid) showCard(secs); }, 2500);
+  }
+
+  function rr(x, px, py, w, h, r, fill) {
+    x.beginPath(); x.moveTo(px + r, py); x.arcTo(px + w, py, px + w, py + h, r); x.arcTo(px + w, py + h, px, py + h, r);
+    x.arcTo(px, py + h, px, py, r); x.arcTo(px, py, px + w, py, r); x.closePath(); x.fillStyle = fill; x.fill();
+  }
+  function titleFor(secs) {
+    if (secs < 12) return 'Fastest Hands in the Alphabet';
+    if (secs < 25) return 'Certified Name Wrangler';
+    return 'Patient Letter Whisperer';
+  }
+  function drawCard(secs) {
+    const c = document.createElement('canvas'); c.width = 1080; c.height = 1350;
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 0, 1350); g.addColorStop(0, '#2b1166'); g.addColorStop(1, '#120b2e');
+    x.fillStyle = g; x.fillRect(0, 0, 1080, 1350);
+    for (let i = 0; i < 70; i++) { x.fillStyle = COLORS[i % COLORS.length]; x.globalAlpha = .35;
+      x.fillRect((i * 389) % 1080, (i * 211) % 1350, 10, 16); }
+    x.globalAlpha = 1; x.textAlign = 'center';
+    x.fillStyle = '#ffd23f'; x.font = '700 52px ui-monospace,Consolas,monospace'; x.fillText('NAME.exe', 540, 130);
+    x.fillStyle = '#fff'; x.font = '800 46px system-ui,Segoe UI,sans-serif'; x.fillText('IDENTITY RECOVERED', 540, 210);
+    const n = letters.length, ts = Math.min(150, 920 / (n * 1.16)), gp = ts * .16;
+    const sx = (1080 - (n * ts + (n - 1) * gp)) / 2, ty = 330;
+    letters.forEach((L, i) => {
+      const px = sx + i * (ts + gp);
+      rr(x, px, ty + 8, ts, ts * 1.15, ts * .28, 'rgba(0,0,0,.28)');
+      rr(x, px, ty, ts, ts * 1.15, ts * .28, L.color);
+      [.32, .68].forEach(f => {
+        x.fillStyle = '#fff'; x.beginPath(); x.arc(px + ts * f, ty + ts * .27, ts * .13, 0, 7); x.fill();
+        x.fillStyle = '#1b1230'; x.beginPath(); x.arc(px + ts * f, ty + ts * .28, ts * .06, 0, 7); x.fill();
+      });
+      x.fillStyle = '#fff'; x.font = `900 ${ts * .58}px system-ui,Segoe UI,sans-serif`; x.fillText(L.ch, px + ts / 2, ty + ts * 1.04);
+    });
+    x.fillStyle = '#fff'; x.font = '900 72px system-ui,Segoe UI,sans-serif';
+    let nm = shownName; while (x.measureText(nm).width > 940 && nm.length > 3) nm = nm.slice(0, -1);
+    x.fillText(nm, 540, 640);
+    x.fillStyle = '#ff4fa3'; x.font = '800 54px system-ui,Segoe UI,sans-serif'; x.fillText(titleFor(secs), 540, 760);
+    x.fillStyle = 'rgba(255,255,255,.85)'; x.font = '600 40px system-ui,Segoe UI,sans-serif';
+    x.fillText(`Caught every letter in ${secs.toFixed(1)}s`, 540, 850);
+    x.fillStyle = '#ffd23f'; x.font = '700 38px system-ui,Segoe UI,sans-serif'; x.fillText(SITE_LINE, 540, 1230);
+    return c;
+  }
+  let cardUrl = null;
+  function showCard(secs) {
+    drawCard(secs).toBlob(blob => {
+      if (!blob) return;
+      if (cardUrl) URL.revokeObjectURL(cardUrl);
+      cardUrl = URL.createObjectURL(blob);
+      cardImg.src = cardUrl; dl.href = cardUrl;
+      dl.download = (shownName.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'name') + '-recovered.png';
+      card.classList.add('show');
+    }, 'image/png');
+  }
+  again.addEventListener('click', () => {
+    card.classList.remove('show'); gameId++;
+    state = 'intro'; letters = []; slots = []; cookie = null; field.innerHTML = ''; slotsEl.innerHTML = '';
+    slotsEl.classList.remove('show'); hud.classList.remove('show'); hint.classList.remove('show');
+    intro.classList.remove('hide'); nameIn.value = ''; note.textContent = '';
+    setTimeout(() => { try { nameIn.focus({ preventScroll: true }); } catch (e) {} }, 100);
+  });
+
+  // ---------- main loop ----------
+  layout();
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, .05); last = now;
+    if (state === 'play' || state === 'win') update(dt);
+    render(now); confetti(dt);
+    if (state === 'play') timerEl.textContent = ((now - startT) / 1000).toFixed(1) + 's';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
